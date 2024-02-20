@@ -1,4 +1,6 @@
-﻿namespace WebApplication4
+﻿using ClassLibrary1.Utilities;
+
+namespace WebApplication4
 {
     public class Startup
     {
@@ -21,6 +23,8 @@
             services.AddEndpointsApiExplorer();
             services.AddHttpContextAccessor();
             services.AddSwaggerGen();
+
+            services.AddSingleton<RequireMTLSFilter>();
         }
 
         public void Configure(IApplicationBuilder app, IWebHostEnvironment env)

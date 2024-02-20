@@ -1,8 +1,8 @@
 using System.Security.Cryptography.X509Certificates;
-using System.Text.Json;
 using ClassLibrary1.Utilities;
 using Common.MessageDefinitions;
 using Microsoft.AspNetCore.Mvc;
+using Newtonsoft.Json;
 
 namespace WebApplication5.Controllers
 {
@@ -21,12 +21,14 @@ namespace WebApplication5.Controllers
         public async Task<IActionResult> Start()
         {
             var K1 = SecurityUtilities.GenerateRSAKeyPair();
+            var C2 = GenerateCustomerSigningCertificate(_deviceId, K1);
+
             var R = await HandShake(K1);
 
             Persist($"{_deviceId}.K1", K1);
+            Persist($"{_deviceId}.C2", C2);
             Persist($"{_deviceId}.K2", R.K2);
             Persist($"{_deviceId}.C1", R.C1);
-            Persist($"{_deviceId}.C2", R.C2);
 
             return Ok(new
             {
@@ -61,7 +63,7 @@ namespace WebApplication5.Controllers
                                                       requestUrl: "ss/activate",
                                                       request: request);
 
-            var response = JsonSerializer.Deserialize<InitiateActivationResponse>(responseJon);
+            var response = JsonConvert.DeserializeObject<InitiateActivationResponse>(responseJon);
 
             return response;
         }
@@ -80,7 +82,7 @@ namespace WebApplication5.Controllers
                                                       request: request,
                                                       clientCertificate: C1_x509);
 
-            var response = JsonSerializer.Deserialize<LoginActivationResponse>(responseJon);
+            var response = JsonConvert.DeserializeObject<LoginActivationResponse>(responseJon);
 
             return response;
         }
@@ -106,9 +108,22 @@ namespace WebApplication5.Controllers
                                                       request: request,
                                                       clientCertificate: C1_x509);
 
-            var response = JsonSerializer.Deserialize<LoginVerificationResponse>(responseJon);
+            var response = JsonConvert.DeserializeObject<LoginVerificationResponse>(responseJon);
 
             return response;
+        }
+
+        private string GenerateCustomerSigningCertificate(string? deviceId, KeyPair keyPair)
+        {
+            var C2_cer = SecurityUtilities.GenerateSelfSignedCertificate(pemPublicKey: keyPair.PublicKey,
+                                                                          pemPrivateKey: keyPair.PrivateKey,
+                                                                          issuer: $"CN=VP.SDK",
+                                                                          subject: $"CN={deviceId}.C2",
+                                                                          validFrom: DateTimeOffset.Now,
+                                                                          validUntil: DateTimeOffset.Now.AddDays(90));
+            var C2_pfx = SecurityUtilities.ToPFX(C2_cer);
+
+            return Convert.ToBase64String(C2_pfx);
         }
 
         private void Persist<T>(string id, T item)

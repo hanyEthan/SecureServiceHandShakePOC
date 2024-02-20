@@ -24,17 +24,15 @@ namespace WebApplication4.Controllers
             var K1 = new KeyPair() { PublicKey = request.K1PublicKey };
             var K2 = SecurityUtilities.GenerateRSAKeyPair();
 
-            var C1 = GenerateClientCertificate(K2);
-            var C2 = GenerateCustomerSigningCertificate(K1);
+            var C1 = GenerateClientCertificate(deviceId, K2);
 
-            Persist($"{deviceId}.C2", C2);
             Persist($"{deviceId}.K2.public", K2.PublicKey);
+            Persist($"{deviceId}.K1.public", K1.PublicKey);
 
             return Ok(new InitiateActivationResponse()
             {
                 K2 = K2,
                 C1 = C1,
-                C2 = C2,
             });
         }
 
@@ -45,9 +43,9 @@ namespace WebApplication4.Controllers
             var context = new Dictionary<string, object>()
             {
                 { "C1", base.HttpContext.Connection.ClientCertificate },
-                { "C2", Get<string>($"{request.DeviceId}.C2") },
                 { "K2_publicKey_extracted", SecurityUtilities.ExtractRSAPublicKeyFromCertificate(base.HttpContext.Connection.ClientCertificate) },
                 { "K2_publicKey_stored", Get<string>($"{request.DeviceId}.K2.public") },
+                { "K1_publicKey_stored", Get<string>($"{request.DeviceId}.K1.public") },
             };
 
             if (!IsValidDeviceIdentity(context))
@@ -76,12 +74,12 @@ namespace WebApplication4.Controllers
             var context = new Dictionary<string, object>()
             {
                 { "C1", base.HttpContext.Connection.ClientCertificate },
-                { "C2", Get<string>($"{request.DeviceId}.C2") },
                 { "K2_publicKey_extracted", SecurityUtilities.ExtractRSAPublicKeyFromCertificate(base.HttpContext.Connection.ClientCertificate) },
                 { "K2_publicKey_stored", Get<string>($"{request.DeviceId}.K2.public") },
                 { "challenge_extracted", request.Challenge },
                 { "challenge_stored", Get<string>($"{request.DeviceId}.challenge") },
                 { "challengeSignature", request.ChallengeSignature },
+                { "K1_publicKey_stored", Get<string>($"{request.DeviceId}.K1.public") },
             };
 
             if (!IsValidDeviceIdentity(context))
@@ -110,23 +108,17 @@ namespace WebApplication4.Controllers
         private void ValidateSDKInfo(InitiateActivationRequest request)
         {
         }
-        private string GenerateClientCertificate(KeyPair keyPair)
+        private string GenerateClientCertificate(string? deviceId, KeyPair keyPair)
         {
-            var C1 = SecurityUtilities.GenerateSelfSignedCertificatePfx(keyPair: keyPair,
-                                                                        certificateSubject: "ClientCertSubject",
-                                                                        validFrom: DateTimeOffset.Now,
-                                                                        validUntil: DateTimeOffset.Now.AddDays(90));
+            var C1_cer = SecurityUtilities.GenerateSelfSignedCertificate(pemPublicKey: keyPair.PublicKey,
+                                                                          pemPrivateKey: keyPair.PrivateKey,
+                                                                          issuer: $"CN=VP.SS",
+                                                                          subject: $"CN={deviceId}.C1",
+                                                                          validFrom: DateTimeOffset.Now,
+                                                                          validUntil: DateTimeOffset.Now.AddDays(90));
+            var C1_pfx = SecurityUtilities.ToPFX(C1_cer);
 
-            return Convert.ToBase64String(C1);
-        }
-        private string GenerateCustomerSigningCertificate(KeyPair keyPair)
-        {
-            var C2 = SecurityUtilities.GenerateSelfSignedCertificatePfx(keyPair: keyPair,
-                                                                        certificateSubject: "ClientCertSubject",
-                                                                        validFrom: DateTimeOffset.Now,
-                                                                        validUntil: DateTimeOffset.Now.AddDays(90));
-
-            return Convert.ToBase64String(C2);
+            return Convert.ToBase64String(C1_pfx);
         }
         private void Persist<T>(string id, T item)
         {
@@ -163,8 +155,9 @@ namespace WebApplication4.Controllers
         }
         private string GenerateNonceChallenge(Dictionary<string, object> context)
         {
+            var K1_publicKey = (string)context["K1_publicKey_stored"];
             var nonceChallenge = SecurityUtilities.GenerateSecureNonceChallenge();
-            var nonceChallengeEncrypted = SecurityUtilities.EncryptContent(nonceChallenge, (string)context["K2_publicKey_extracted"]);
+            var nonceChallengeEncrypted = SecurityUtilities.EncryptContent(nonceChallenge, K1_publicKey);
 
             return nonceChallengeEncrypted;
         }
@@ -173,7 +166,7 @@ namespace WebApplication4.Controllers
             var challenge_extracted = (string) context["challenge_extracted"];
             var challenge_stored = (string) context["challenge_stored"];
             var signature = (string) context["challengeSignature"];
-            var publicKey = (string) context["K2_publicKey_extracted"];
+            var publicKey = (string) context["K1_publicKey_stored"];
 
             return string.Equals(challenge_extracted, challenge_stored)
                 && SecurityUtilities.VerifySignedContent(challenge_stored, signature, publicKey);
