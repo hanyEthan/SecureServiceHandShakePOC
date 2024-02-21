@@ -43,36 +43,30 @@ namespace ClassLibrary1.Utilities
                               .Replace('/', '_');
             }
         }
-        
         public static string EncryptContent(string content, string publicKey)
         {
             var contentBytes = Encoding.UTF8.GetBytes(content);
+            var publicKeyParam = FromPemToRSAPublicKey(publicKey);
+            var publicKeyParamRSA = (RsaKeyParameters)publicKeyParam;
 
-            using (var rsa = RSA.Create())
-            {
-                var pubKeyParam = (RsaKeyParameters)PublicKeyFactory.CreateKey(Convert.FromBase64String(publicKey));
+            var encryptEngine = new OaepEncoding(new RsaEngine(), new Sha256Digest());
+            encryptEngine.Init(true, publicKeyParamRSA);
 
-                var encryptEngine = new OaepEncoding(new RsaEngine(), new Sha256Digest());
-                encryptEngine.Init(true, pubKeyParam);
-
-                var encryptedBytes = encryptEngine.ProcessBlock(contentBytes, 0, contentBytes.Length);
-                return Convert.ToBase64String(encryptedBytes);
-            }
+            var encryptedBytes = encryptEngine.ProcessBlock(contentBytes, 0, contentBytes.Length);
+            return Convert.ToBase64String(encryptedBytes);
         }
         public static string DecryptContent(string content, string privateKey)
         {
             var encryptedBytes = Convert.FromBase64String(content);
 
-            using (var rsa = RSA.Create())
-            {
-                var privKeyParam = (RsaPrivateCrtKeyParameters)PrivateKeyFactory.CreateKey(Convert.FromBase64String(privateKey));
+            var privateKeyParam = FromPemToRSAPrivateKey(privateKey);
+            var privateKeyParamRSA = (RsaPrivateCrtKeyParameters)privateKeyParam;
 
-                var decryptEngine = new OaepEncoding(new RsaEngine(), new Sha256Digest()); // Adjust hash choice if needed
-                decryptEngine.Init(false, privKeyParam);
+            var decryptEngine = new OaepEncoding(new RsaEngine(), new Sha256Digest()); // Adjust hash choice if needed
+            decryptEngine.Init(false, privateKeyParamRSA);
 
-                var decryptedBytes = decryptEngine.ProcessBlock(encryptedBytes, 0, encryptedBytes.Length);
-                return Encoding.UTF8.GetString(decryptedBytes);
-            }
+            var decryptedBytes = decryptEngine.ProcessBlock(encryptedBytes, 0, encryptedBytes.Length);
+            return Encoding.UTF8.GetString(decryptedBytes);
         }
         public static string SignContent(string content, string privateKey)
         {
